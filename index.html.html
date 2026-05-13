@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MVR — Repair Lookup v2</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<style>
+:root {
+  --ink: #0D0D0D; --ink2: #3A3A3A; --ink3: #7A7A7A;
+  --paper: #F7F4EE; --paper2: #EDEAE2; --paper3: #E2DED5;
+  --accent: #C8471A; --accent2: #F0622A;
+  --surface: #FFFFFF;
+  --border: rgba(13,13,13,0.1); --border2: rgba(13,13,13,0.06);
+  --green: #2E7D32; --green-bg: #E8F5E9;
+  --blue: #1565C0; --blue-bg: #E3F2FD;
+  --shadow: 0 2px 20px rgba(0,0,0,0.07);
+  --shadow-lg: 0 8px 40px rgba(0,0,0,0.12);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'DM Sans', sans-serif; background: var(--paper); color: var(--ink); min-height: 100vh; }
+
+/* HEADER */
+.header { background: var(--ink); padding: 0 32px; height: 60px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+.header-brand { display: flex; align-items: center; gap: 12px; }
+.header-logo { width: 34px; height: 34px; background: var(--accent); border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+.header-logo svg { color: white; }
+.header-title { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; color: white; }
+.header-title span { color: var(--accent2); }
+.header-right { display: flex; align-items: center; gap: 10px; }
+
+/* Pills */
+.pill { display: flex; align-items: center; gap: 6px; border-radius: 20px; padding: 5px 12px; font-size: 12px; font-weight: 500; }
+.pill-live { background: rgba(66,165,245,0.15); border: 1px solid rgba(66,165,245,0.3); color: #90CAF9; }
+.pill-live-dot { width: 6px; height: 6px; border-radius: 50%; background: #42A5F5; animation: blink 1.5s infinite; }
+.pill-records { background: var(--green-bg); color: var(--green); }
+.pill-records-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+.pill-syncing { background: rgba(255,167,38,0.15); color: #FFA726; border: 1px solid rgba(255,167,38,0.3); }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+.upload-btn { display: flex; align-items: center; gap: 6px; background: var(--accent); border: none; border-radius: 8px; padding: 7px 14px; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; color: white; cursor: pointer; transition: background .15s; }
+.upload-btn:hover { background: var(--accent2); }
+.upload-btn svg { width: 14px; height: 14px; }
+
+/* LAYOUT */
+.main { display: grid; grid-template-columns: 300px 1fr; min-height: calc(100vh - 60px); }
+
+/* LEFT */
+.left-panel { background: var(--surface); border-right: 1px solid var(--border); padding: 20px 16px; overflow-y: auto; max-height: calc(100vh - 60px); position: sticky; top: 60px; }
+.panel-section { margin-bottom: 22px; }
+.panel-label { font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--ink3); margin-bottom: 8px; }
+.panel-label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+
+.search-wrap { position: relative; }
+.search-input { width: 100%; background: var(--paper); border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 14px 10px 36px; font-family: 'DM Sans', sans-serif; font-size: 14px; color: var(--ink); outline: none; transition: border-color .15s; }
+.search-input:focus { border-color: var(--accent); }
+.search-input::placeholder { color: var(--ink3); }
+.search-icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--ink3); pointer-events: none; }
+
+.filter-group { margin-bottom: 12px; }
+.filter-label { font-size: 11px; font-weight: 500; color: var(--ink3); margin-bottom: 4px; display: block; }
+.filter-select, .filter-input { width: 100%; background: var(--paper); border: 1.5px solid var(--border); border-radius: 8px; padding: 7px 10px; font-family: 'DM Sans', sans-serif; font-size: 13px; color: var(--ink); outline: none; transition: border-color .15s; }
+.filter-select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237A7A7A' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px; cursor: pointer; }
+.filter-select:focus, .filter-input:focus { border-color: var(--accent); }
+.date-row, .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.btn-row { margin-top: 4px; }
+.btn { padding: 9px 0; border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; border: none; transition: all .15s; text-align: center; }
+.btn-primary { background: var(--accent); color: white; }
+.btn-primary:hover { background: var(--accent2); }
+.btn-ghost { background: var(--paper); color: var(--ink2); border: 1.5px solid var(--border); }
+.btn-ghost:hover { background: var(--paper2); }
+
+/* Loaded files */
+.file-item { display: flex; align-items: center; gap: 8px; background: var(--paper); border: 1px solid var(--border2); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; }
+.file-item-info { min-width: 0; flex: 1; }
+.file-item-name { font-size: 12px; font-weight: 500; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file-item-meta { font-size: 11px; color: var(--ink3); margin-top: 2px; }
+.file-del-btn { background: none; border: none; cursor: pointer; color: var(--ink3); font-size: 18px; line-height: 1; padding: 0 2px; flex-shrink: 0; transition: color .1s; }
+.file-del-btn:hover { color: var(--accent); }
+.del-all-btn { font-size: 10px; font-weight: 600; color: var(--accent); background: none; border: none; cursor: pointer; font-family: 'DM Sans', sans-serif; letter-spacing: .04em; text-transform: uppercase; }
+.del-all-btn:hover { opacity: .7; }
+.no-files { font-size: 12px; color: var(--ink3); padding: 8px 0; }
+
+/* Sync status box */
+.sync-box { background: var(--blue-bg); border: 1px solid rgba(21,101,192,0.2); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; font-size: 12px; color: var(--blue); display: flex; align-items: flex-start; gap: 8px; line-height: 1.5; }
+.sync-box svg { flex-shrink: 0; margin-top: 1px; }
+
+/* Insights */
+.insight-card { background: var(--paper); border: 1px solid var(--border2); border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; }
+.insight-card-title { font-size: 10px; font-weight: 600; color: var(--ink3); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px; }
+.insight-row { display: flex; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--border2); font-size: 12px; }
+.insight-row:last-child { border-bottom: none; }
+.insight-name { color: var(--ink2); width: 130px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
+.insight-bar-wrap { flex: 1; margin: 0 8px; height: 4px; background: var(--paper3); border-radius: 2px; }
+.insight-bar { height: 4px; background: var(--accent); border-radius: 2px; }
+.insight-val { font-weight: 600; color: var(--ink); font-family: 'DM Mono', monospace; font-size: 11px; white-space: nowrap; }
+
+/* RIGHT */
+.right-panel { padding: 24px 28px; }
+.stats-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 24px; }
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; box-shadow: var(--shadow); }
+.stat-label { font-size: 10px; font-weight: 600; color: var(--ink3); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 6px; }
+.stat-value { font-family: 'Syne', sans-serif; font-size: 24px; font-weight: 700; color: var(--ink); line-height: 1; }
+.stat-value.accent { color: var(--accent); }
+.stat-sub { font-size: 11px; color: var(--ink3); margin-top: 4px; }
+.results-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.results-title { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; color: var(--ink); }
+.results-count { font-size: 12px; color: var(--ink3); background: var(--paper2); border-radius: 20px; padding: 3px 10px; margin-left: 8px; }
+.copy-btn { display: flex; align-items: center; gap: 6px; background: var(--ink); color: white; border: none; border-radius: 8px; padding: 7px 14px; font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500; cursor: pointer; transition: all .15s; }
+.copy-btn:hover { background: var(--accent); }
+.copy-btn.copied { background: var(--green); }
+.copy-btn svg { width: 13px; height: 13px; }
+.table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow); }
+.results-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.results-table th { background: var(--paper); padding: 10px 14px; text-align: left; font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--ink3); border-bottom: 1px solid var(--border); white-space: nowrap; cursor: pointer; user-select: none; }
+.results-table th:hover { background: var(--paper2); }
+.results-table th.sorted { color: var(--accent); }
+.results-table td { padding: 10px 14px; border-bottom: 1px solid var(--border2); color: var(--ink2); vertical-align: top; }
+.results-table tr:last-child td { border-bottom: none; }
+.results-table tr:hover td { background: #fdfaf5; }
+.td-unit { font-family: 'DM Mono', monospace; font-size: 12px; font-weight: 500; color: var(--ink); }
+.td-cost { font-family: 'DM Mono', monospace; font-size: 12px; font-weight: 600; color: var(--accent); white-space: nowrap; }
+.td-task { max-width: 260px; line-height: 1.4; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 500; white-space: nowrap; }
+.badge-owner { background: #E3F2FD; color: #1565C0; }
+.badge-guest { background: #FFF3E0; color: #E65100; }
+.badge-damage { background: #FCE4EC; color: #B71C1C; }
+.badge-internal { background: var(--paper2); color: var(--ink3); }
+.badge-approved { background: var(--green-bg); color: var(--green); }
+.empty-state { text-align: center; padding: 60px 20px; color: var(--ink3); }
+.empty-icon { font-size: 40px; margin-bottom: 12px; opacity: .5; }
+.empty-title { font-family: 'Syne', sans-serif; font-size: 16px; color: var(--ink2); margin-bottom: 6px; }
+.empty-sub { font-size: 13px; line-height: 1.6; }
+
+/* Pagination */
+.pagination { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 16px; flex-wrap: wrap; }
+.page-btn { width: 32px; height: 32px; border-radius: 8px; border: 1.5px solid var(--border); background: var(--surface); font-family: 'DM Mono', monospace; font-size: 12px; color: var(--ink2); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .15s; }
+.page-btn:hover { border-color: var(--accent); color: var(--accent); }
+.page-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+.page-btn:disabled { opacity: .3; cursor: not-allowed; }
+
+/* Toast */
+.toast { position: fixed; bottom: 24px; right: 24px; background: var(--ink); color: white; border-radius: 10px; padding: 12px 18px; font-size: 13px; font-weight: 500; box-shadow: var(--shadow-lg); transform: translateY(80px); opacity: 0; transition: all .3s cubic-bezier(.34,1.56,.64,1); z-index: 999; max-width: 320px; }
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.success { background: var(--green); }
+.toast.error { background: #B71C1C; }
+.toast.info { background: var(--blue); }
+
+#file-input { display: none; }
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--paper3); border-radius: 10px; }
+@media(max-width:700px){.main{grid-template-columns:1fr}.left-panel{position:static;max-height:none}.stats-row{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<input type="file" id="file-input" accept=".xlsx,.xls,.csv" multiple>
+<div class="toast" id="toast"></div>
+
+<header class="header">
+  <div class="header-brand">
+    <div class="header-logo">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>
+    </div>
+    <div class="header-title">MVR <span>Repair Lookup</span></div>
+  </div>
+  <div class="header-right">
+    <div class="pill pill-live"><div class="pill-live-dot"></div>LIVE</div>
+    <div class="pill pill-records" id="records-pill" style="display:none">
+      <div class="pill-records-dot"></div>
+      <span id="records-pill-text">0 records</span>
+    </div>
+    <button class="upload-btn" id="upload-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Upload & Sync
+    </button>
+  </div>
+</header>
+
+<div class="main">
+  <aside class="left-panel">
+
+    <div class="panel-section">
+      <div class="panel-label">Search</div>
+      <div class="search-wrap">
+        <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input class="search-input" id="search-input" type="text" placeholder="Unit, task, keyword..." oninput="applyFilters()">
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-label">Filters</div>
+      <div class="filter-group">
+        <span class="filter-label">Building</span>
+        <select class="filter-select" id="filter-building" onchange="applyFilters()"><option value="">All buildings</option></select>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Subdepartment</span>
+        <select class="filter-select" id="filter-subdept" onchange="applyFilters()"><option value="">All</option></select>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Bill To</span>
+        <select class="filter-select" id="filter-billto" onchange="applyFilters()"><option value="">All</option></select>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Status</span>
+        <select class="filter-select" id="filter-status" onchange="applyFilters()"><option value="">All</option></select>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Completed Date</span>
+        <div class="date-row">
+          <input class="filter-input" id="filter-from" type="date" onchange="applyFilters()">
+          <input class="filter-input" id="filter-to" type="date" onchange="applyFilters()">
+        </div>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Cost Range (USD)</span>
+        <div class="date-row">
+          <input class="filter-input" id="filter-cost-min" type="number" placeholder="Min $" oninput="applyFilters()">
+          <input class="filter-input" id="filter-cost-max" type="number" placeholder="Max $" oninput="applyFilters()">
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="applyFilters()">Apply</button>
+        <button class="btn btn-ghost" onclick="clearFilters()">Clear</button>
+      </div>
+    </div>
+
+    <div class="panel-section" id="insights-section" style="display:none">
+      <div class="panel-label">Insights</div>
+      <div class="insight-card">
+        <div class="insight-card-title">Most Common Tasks</div>
+        <div id="insight-tasks"></div>
+      </div>
+      <div class="insight-card">
+        <div class="insight-card-title">Cost by Building</div>
+        <div id="insight-building"></div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-label-row">
+        <div class="panel-label" style="margin-bottom:0">Loaded Files</div>
+        <button class="del-all-btn" onclick="deleteAllFiles()">Delete All</button>
+      </div>
+      <div class="sync-box">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        When you upload a file it syncs live — everyone with this link sees it instantly.
+      </div>
+      <div id="loaded-files-list"><div class="no-files">Loading data...</div></div>
+    </div>
+  </aside>
+
+  <div class="right-panel">
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-label">Results</div><div class="stat-value" id="stat-results">—</div><div class="stat-sub">records</div></div>
+      <div class="stat-card"><div class="stat-label">Total Cost</div><div class="stat-value accent" id="stat-cost">—</div><div class="stat-sub">USD</div></div>
+      <div class="stat-card"><div class="stat-label">Units</div><div class="stat-value" id="stat-units">—</div><div class="stat-sub">unique</div></div>
+      <div class="stat-card"><div class="stat-label">Avg Cost</div><div class="stat-value" id="stat-avg">—</div><div class="stat-sub">per repair</div></div>
+    </div>
+    <div class="results-header">
+      <div><span class="results-title">Repair Records</span><span class="results-count" id="results-count">0</span></div>
+      <button class="copy-btn" id="copy-btn" onclick="copyResults()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Copy for Owner
+      </button>
+    </div>
+    <div class="table-wrap">
+      <div id="results-container">
+        <div class="empty-state">
+          <div class="empty-icon">🔄</div>
+          <div class="empty-title">Connecting to live data...</div>
+          <div class="empty-sub">Loading the latest repair records from the cloud.</div>
+        </div>
+      </div>
+    </div>
+    <div class="pagination" id="pagination"></div>
+  </div>
+</div>
+
+<script>
+// ── Firebase ──
+var firebaseConfig = {
+  apiKey: "AIzaSyDhfOS84Vkgk502z86kW77YEV68f0j5lNw",
+  authDomain: "mvr-repair-lookup.firebaseapp.com",
+  projectId: "mvr-repair-lookup",
+  storageBucket: "mvr-repair-lookup.firebasestorage.app",
+  messagingSenderId: "923204420800",
+  appId: "1:923204420800:web:4ad2354ccbc5663b919925"
+};
+firebase.initializeApp(firebaseConfig);
+var db = firebase.firestore();
+
+// ── State ──
+var allData    = [];
+var loadedFiles = [];
+var filtered   = [];
+var page       = 1;
+var PER_PAGE   = 50;
+var sortCol    = null;
+var sortDir    = 1;
+var isSyncing  = false;
+
+// ── Column mapping ──
+var COL = {
+  building:    ['Building','building','Property','property'],
+  unit:        ['Unit','unit','Property Internal ID','Property Marketing ID'],
+  subdept:     ['Subdepartment','subdepartment','Sub-Department'],
+  dept:        ['Department','department'],
+  status:      ['Status','status'],
+  priority:    ['Priority','priority'],
+  completed:   ['Completed date','Completed Date','completed_date'],
+  created:     ['Created date','Created Date'],
+  updated:     ['Last updated date','Last Updated Date'],
+  task_title:  ['Task title','Task Title','task_title'],
+  task_desc:   ['Task description','Task Description'],
+  task_summary:['Task summary','Task Summary'],
+  rate_paid:   ['Rate paid','Rate Paid'],
+  rate_type:   ['Rate type','Rate Type'],
+  cost:        ['Total cost','Total Cost','total_cost','Cost'],
+  currency:    ['Currency','currency'],
+  bill_to:     ['Bill to','Bill To','bill_to','Billed To'],
+  requested:   ['Requested by','Requested By'],
+};
+
+function mapRow(raw) {
+  var keys = Object.keys(raw);
+  function get(candidates) {
+    for (var i = 0; i < candidates.length; i++) {
+      var c = candidates[i].toLowerCase();
+      for (var j = 0; j < keys.length; j++) {
+        if (keys[j].trim().toLowerCase() === c && raw[keys[j]] !== '' && raw[keys[j]] !== null && raw[keys[j]] !== undefined) {
+          return String(raw[keys[j]]).trim();
+        }
+      }
+    }
+    return '';
+  }
+  return {
+    building: get(COL.building), unit: get(COL.unit), subdept: get(COL.subdept),
+    dept: get(COL.dept), status: get(COL.status), priority: get(COL.priority),
+    completed: get(COL.completed), created: get(COL.created), updated: get(COL.updated),
+    task_title: get(COL.task_title), task_desc: get(COL.task_desc), task_summary: get(COL.task_summary),
+    rate_paid: get(COL.rate_paid), rate_type: get(COL.rate_type), cost: get(COL.cost),
+    currency: get(COL.currency), bill_to: get(COL.bill_to), requested: get(COL.requested),
+  };
+}
+
+// ── Firebase: Live listener ──
+function startLiveSync() {
+  db.collection('mvr_data')
+    .orderBy('uploadedAt', 'desc')
+    .onSnapshot(function(snapshot) {
+      if (snapshot.empty) {
+        document.getElementById('loaded-files-list').innerHTML = '<div class="no-files">No data yet — upload a file to sync</div>';
+        document.getElementById('results-container').innerHTML = '<div class="empty-state"><div class="empty-icon">📂</div><div class="empty-title">No data yet</div><div class="empty-sub">Click "Upload & Sync" to load your Breezeway export.<br>Your team will see it instantly.</div></div>';
+        return;
+      }
+
+      // Rebuild allData from all Firestore docs
+      var fileMap = {};
+      snapshot.forEach(function(doc) {
+        var d = doc.data();
+        if (!d.fileName || !d.rows) return;
+        if (!fileMap[d.fileName]) fileMap[d.fileName] = { name: d.fileName, rows: [], uploadedAt: d.uploadedAt, month: d.month || '' };
+        fileMap[d.fileName].rows = fileMap[d.fileName].rows.concat(d.rows);
+      });
+
+      loadedFiles = Object.values(fileMap);
+      allData = [];
+      loadedFiles.forEach(function(f) { allData = allData.concat(f.rows); });
+
+      updateRecordsPill();
+      renderFileList();
+      populateFilters();
+      applyFilters();
+
+      if (!isSyncing) showToast('🔄 Live data updated', 'info');
+      isSyncing = false;
+
+    }, function(err) {
+      console.error('Firestore error:', err);
+      showToast('Connection error — check console', 'error');
+    });
+}
+
+// ── Upload & Save to Firebase ──
+document.getElementById('upload-btn').addEventListener('click', function() {
+  document.getElementById('file-input').click();
+});
+document.getElementById('file-input').addEventListener('change', function(e) {
+  if (e.target.files.length) processFiles(Array.from(e.target.files));
+  e.target.value = '';
+});
+document.addEventListener('dragover', function(e) { e.preventDefault(); });
+document.addEventListener('drop', function(e) {
+  e.preventDefault();
+  var files = Array.from(e.dataTransfer.files).filter(function(f) { return /\.(xlsx|xls|csv)$/i.test(f.name); });
+  if (files.length) processFiles(files);
+});
+
+function processFiles(files) {
+  var pending = files.length;
+  files.forEach(function(file) {
+    var isCSV = /\.csv$/i.test(file.name);
+    var reader = new FileReader();
+    reader.onerror = function() { showToast('Error reading ' + file.name, 'error'); pending--; };
+    reader.onload = function(ev) {
+      try {
+        var rows = [];
+        var wb = isCSV
+          ? XLSX.read(ev.target.result, { type: 'string' })
+          : XLSX.read(ev.target.result, { type: 'array', cellDates: true });
+        wb.SheetNames.forEach(function(sn) {
+          XLSX.utils.sheet_to_json(wb.Sheets[sn], { defval: '' }).forEach(function(r) { rows.push(mapRow(r)); });
+        });
+        if (rows.length) {
+          showToast('⬆️ Syncing ' + rows.length + ' records...', 'info');
+          saveToFirebase(file.name, rows);
+        } else {
+          showToast('No data found in ' + file.name, 'error');
+        }
+      } catch(err) {
+        showToast('Could not read ' + file.name, 'error');
+        console.error(err);
+      }
+      pending--;
+    };
+    if (isCSV) reader.readAsText(file); else reader.readAsArrayBuffer(file);
+  });
+}
+
+function saveToFirebase(fileName, rows) {
+  isSyncing = true;
+  var CHUNK_SIZE = 300;
+  var chunks = [];
+  for (var i = 0; i < rows.length; i += CHUNK_SIZE) {
+    chunks.push(rows.slice(i, i + CHUNK_SIZE));
+  }
+
+  // Delete old docs for this file first
+  db.collection('mvr_data').where('fileName', '==', fileName).get()
+    .then(function(snap) {
+      var batch = db.batch();
+      snap.forEach(function(doc) { batch.delete(doc.ref); });
+      return batch.commit();
+    })
+    .then(function() {
+      // Save new chunks
+      var saves = chunks.map(function(chunk, idx) {
+        return db.collection('mvr_data').add({
+          fileName: fileName,
+          rows: chunk,
+          chunkIndex: idx,
+          totalChunks: chunks.length,
+          uploadedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          month: detectMonth(rows)
+        });
+      });
+      return Promise.all(saves);
+    })
+    .then(function() {
+      showToast('✅ "' + fileName + '" synced — team can see it now!', 'success');
+    })
+    .catch(function(err) {
+      console.error('Save error:', err);
+      showToast('Sync failed: ' + err.message, 'error');
+      isSyncing = false;
+    });
+}
+
+function detectMonth(rows) {
+  if (!rows.length) return '';
+  var d = rows.find(function(r) { return r.completed; });
+  if (!d) return '';
+  var dt = new Date(d.completed);
+  if (isNaN(dt)) return '';
+  return dt.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+}
+
+function deleteAllFiles() {
+  if (!confirm('Delete all synced data? This will clear data for everyone.')) return;
+  db.collection('mvr_data').get().then(function(snap) {
+    var batch = db.batch();
+    snap.forEach(function(doc) { batch.delete(doc.ref); });
+    return batch.commit();
+  }).then(function() {
+    showToast('✓ All data cleared', 'success');
+  }).catch(function(e) { showToast('Error: ' + e.message, 'error'); });
+}
+
+function deleteFile(fileName) {
+  if (!confirm('Remove "' + fileName + '" for everyone?')) return;
+  db.collection('mvr_data').where('fileName', '==', fileName).get()
+    .then(function(snap) {
+      var batch = db.batch();
+      snap.forEach(function(doc) { batch.delete(doc.ref); });
+      return batch.commit();
+    })
+    .then(function() { showToast('✓ "' + fileName + '" removed', 'success'); })
+    .catch(function(e) { showToast('Error: ' + e.message, 'error'); });
+}
+
+function updateRecordsPill() {
+  var pill = document.getElementById('records-pill');
+  var txt = document.getElementById('records-pill-text');
+  if (allData.length) {
+    pill.style.display = 'flex';
+    txt.textContent = allData.length.toLocaleString() + ' records';
+  } else {
+    pill.style.display = 'none';
+  }
+}
+
+function renderFileList() {
+  var el = document.getElementById('loaded-files-list');
+  if (!loadedFiles.length) { el.innerHTML = '<div class="no-files">No files synced yet</div>'; return; }
+  el.innerHTML = loadedFiles.map(function(f) {
+    var month = f.month ? ' · ' + f.month : '';
+    return '<div class="file-item"><div class="file-item-info"><div class="file-item-name">☁️ ' + f.name + '</div><div class="file-item-meta">' + f.rows.length.toLocaleString() + ' records' + month + '</div></div><button class="file-del-btn" onclick="deleteFile(\'' + f.name.replace(/'/g,"\\'") + '\')" title="Remove">×</button></div>';
+  }).join('');
+}
+
+// ── Filters ──
+function populateFilters() {
+  function unique(key) { var s={},o=[]; allData.forEach(function(r){var v=r[key];if(v&&!s[v]){s[v]=1;o.push(v);}}); return o.sort(); }
+  function setOpts(id,vals,label) { var sel=document.getElementById(id),cur=sel.value; sel.innerHTML='<option value="">'+label+'</option>'; vals.forEach(function(v){var o=document.createElement('option');o.value=v;o.textContent=v;sel.appendChild(o);}); if(vals.indexOf(cur)>=0)sel.value=cur; }
+  setOpts('filter-building',unique('building'),'All buildings');
+  setOpts('filter-subdept',unique('subdept'),'All');
+  setOpts('filter-billto',unique('bill_to'),'All');
+  setOpts('filter-status',unique('status'),'All');
+}
+
+function applyFilters() {
+  var q=document.getElementById('search-input').value.toLowerCase().trim();
+  var building=document.getElementById('filter-building').value;
+  var subdept=document.getElementById('filter-subdept').value;
+  var billto=document.getElementById('filter-billto').value;
+  var status=document.getElementById('filter-status').value;
+  var from=document.getElementById('filter-from').value;
+  var to=document.getElementById('filter-to').value;
+  var cmin=parseFloat(document.getElementById('filter-cost-min').value)||0;
+  var cmax=parseFloat(document.getElementById('filter-cost-max').value)||Infinity;
+  filtered=allData.filter(function(r){
+    if(building&&r.building!==building)return false;
+    if(subdept&&r.subdept!==subdept)return false;
+    if(billto&&r.bill_to!==billto)return false;
+    if(status&&r.status!==status)return false;
+    var cost=parseFloat(r.cost)||0;
+    if(cost<cmin||cost>cmax)return false;
+    if(from||to){var d=new Date(r.completed);if(!isNaN(d)){if(from&&d<new Date(from))return false;if(to&&d>new Date(to+'T23:59:59'))return false;}}
+    if(q){var hay=[r.building,r.unit,r.task_title,r.task_desc,r.subdept,r.bill_to,r.status,r.requested].join(' ').toLowerCase();if(hay.indexOf(q)<0)return false;}
+    return true;
+  });
+  if(sortCol)doSort();
+  page=1; renderStats(); renderTable(); renderPagination(); renderInsights();
+}
+
+function clearFilters(){
+  document.getElementById('search-input').value='';
+  ['filter-building','filter-subdept','filter-billto','filter-status'].forEach(function(id){document.getElementById(id).value='';});
+  document.getElementById('filter-from').value=''; document.getElementById('filter-to').value='';
+  document.getElementById('filter-cost-min').value=''; document.getElementById('filter-cost-max').value='';
+  applyFilters();
+}
+
+function setSort(col){if(sortCol===col)sortDir*=-1;else{sortCol=col;sortDir=1;}doSort();page=1;renderTable();renderPagination();}
+function doSort(){filtered.sort(function(a,b){var av=a[sortCol],bv=b[sortCol];if(sortCol==='cost'){av=parseFloat(av)||0;bv=parseFloat(bv)||0;}if(av<bv)return-sortDir;if(av>bv)return sortDir;return 0;});}
+
+function renderStats(){
+  var total=filtered.length,cost=filtered.reduce(function(s,r){return s+(parseFloat(r.cost)||0);},0),units={};
+  filtered.forEach(function(r){if(r.unit)units[r.unit]=1;});
+  var avg=total?cost/total:0;
+  document.getElementById('stat-results').textContent=total.toLocaleString();
+  document.getElementById('stat-cost').textContent='$'+cost.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  document.getElementById('stat-units').textContent=Object.keys(units).length.toLocaleString();
+  document.getElementById('stat-avg').textContent='$'+avg.toFixed(2);
+  document.getElementById('results-count').textContent=total.toLocaleString();
+}
+
+function badge(v,type){
+  if(!v)return'—';
+  if(type==='bill'){var lv=v.toLowerCase(),cls=lv.includes('owner')?'badge-owner':lv.includes('guest')?'badge-guest':lv.includes('damage')?'badge-damage':'badge-internal';return'<span class="badge '+cls+'">'+v+'</span>';}
+  if(type==='status'){var cls2=v.toLowerCase().includes('approv')||v.toLowerCase().includes('finish')?'badge-approved':'badge-internal';return'<span class="badge '+cls2+'">'+v+'</span>';}
+  return v;
+}
+function sIcon(col){if(sortCol!==col)return' <span style="opacity:.3">↕</span>';return' <span style="color:var(--accent)">'+(sortDir===1?'↑':'↓')+'</span>';}
+function th(col,label){return'<th onclick="setSort(\''+col+'\')" class="'+(sortCol===col?'sorted':'')+'">'+label+sIcon(col)+'</th>';}
+
+function renderTable(){
+  var el=document.getElementById('results-container');
+  if(!allData.length){return;}
+  if(!filtered.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-title">No results</div><div class="empty-sub">Try adjusting your search or filters.</div></div>';return;}
+  var start=(page-1)*PER_PAGE,slice=filtered.slice(start,start+PER_PAGE);
+  var html='<table class="results-table"><thead><tr>'+th('building','Building')+th('unit','Unit')+th('completed','Completed')+th('task_title','Task')+th('subdept','Category')+th('cost','Cost')+th('bill_to','Bill To')+th('status','Status')+'</tr></thead><tbody>';
+  slice.forEach(function(r){html+='<tr><td>'+(r.building||'—')+'</td><td class="td-unit">'+(r.unit||'—')+'</td><td style="white-space:nowrap;font-size:12px">'+(r.completed||'—')+'</td><td class="td-task">'+(r.task_title||r.task_desc||'—')+'</td><td style="font-size:12px">'+(r.subdept||'—')+'</td><td class="td-cost">'+(r.cost?'$'+parseFloat(r.cost).toFixed(2):'—')+'</td><td>'+badge(r.bill_to,'bill')+'</td><td>'+badge(r.status,'status')+'</td></tr>';});
+  html+='</tbody></table>';
+  el.innerHTML=html;
+}
+
+function renderPagination(){
+  var total=Math.ceil(filtered.length/PER_PAGE),el=document.getElementById('pagination');
+  if(total<=1){el.innerHTML='';return;}
+  var html='<button class="page-btn" onclick="goPage('+(page-1)+')" '+(page===1?'disabled':'')+'>‹</button>';
+  for(var i=1;i<=total;i++){if(total>7&&i>2&&i<total-1&&Math.abs(i-page)>1){if(i===3||i===total-2)html+='<span style="padding:0 4px;color:var(--ink3)">…</span>';continue;}html+='<button class="page-btn '+(i===page?'active':'')+'" onclick="goPage('+i+')">'+i+'</button>';}
+  html+='<button class="page-btn" onclick="goPage('+(page+1)+')" '+(page===total?'disabled':'')+'>›</button>';
+  el.innerHTML=html;
+}
+function goPage(p){var total=Math.ceil(filtered.length/PER_PAGE);if(p<1||p>total)return;page=p;renderTable();renderPagination();window.scrollTo({top:60,behavior:'smooth'});}
+
+function renderInsights(){
+  var el=document.getElementById('insights-section');
+  if(!filtered.length){el.style.display='none';return;}
+  el.style.display='block';
+  var tasks={},bldg={};
+  filtered.forEach(function(r){var t=(r.task_title||r.task_desc||'').split('–')[0].split('—')[0].trim();if(t)tasks[t]=(tasks[t]||0)+1;if(r.building)bldg[r.building]=(bldg[r.building]||0)+(parseFloat(r.cost)||0);});
+  var topT=Object.entries(tasks).sort(function(a,b){return b[1]-a[1];}).slice(0,5),maxT=topT[0]?topT[0][1]:1;
+  document.getElementById('insight-tasks').innerHTML=topT.map(function(x){return'<div class="insight-row"><span class="insight-name">'+x[0]+'</span><div class="insight-bar-wrap"><div class="insight-bar" style="width:'+Math.round(x[1]/maxT*100)+'%"></div></div><span class="insight-val">'+x[1]+'x</span></div>';}).join('');
+  var topB=Object.entries(bldg).sort(function(a,b){return b[1]-a[1];}).slice(0,5),maxB=topB[0]?topB[0][1]:1;
+  document.getElementById('insight-building').innerHTML=topB.map(function(x){return'<div class="insight-row"><span class="insight-name">'+x[0]+'</span><div class="insight-bar-wrap"><div class="insight-bar" style="width:'+Math.round(x[1]/maxB*100)+'%"></div></div><span class="insight-val">$'+x[1].toFixed(0)+'</span></div>';}).join('');
+}
+
+function copyResults(){
+  if(!filtered.length){showToast('No results to copy','error');return;}
+  var lines=filtered.slice(0,200).map(function(r){var parts=[];if(r.building)parts.push('Building: '+r.building);if(r.unit)parts.push('Unit: '+r.unit);if(r.completed)parts.push('Date: '+r.completed);if(r.task_title||r.task_desc)parts.push('Task: '+(r.task_title||r.task_desc));if(r.subdept)parts.push('Category: '+r.subdept);if(r.cost)parts.push('Cost: $'+parseFloat(r.cost).toFixed(2));if(r.bill_to)parts.push('Bill to: '+r.bill_to);if(r.status)parts.push('Status: '+r.status);return parts.join(' · ');});
+  var text='Repair Records ('+filtered.length+' total)\n'+'─'.repeat(50)+'\n'+lines.join('\n');
+  if(filtered.length>200)text+='\n... and '+(filtered.length-200)+' more records';
+  navigator.clipboard.writeText(text).then(function(){
+    var btn=document.getElementById('copy-btn');btn.classList.add('copied');
+    btn.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20,6 9,17 4,12"/></svg> Copied!';
+    showToast('✓ Copied to clipboard','success');
+    setTimeout(function(){btn.classList.remove('copied');btn.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy for Owner';},2500);
+  });
+}
+
+function showToast(msg,type){var t=document.getElementById('toast');t.textContent=msg;t.className='toast show '+(type||'');clearTimeout(t._timer);t._timer=setTimeout(function(){t.className='toast';},4000);}
+
+// ── Start ──
+startLiveSync();
+</script>
+</body>
+</html>
